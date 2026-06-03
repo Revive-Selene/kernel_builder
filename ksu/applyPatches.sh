@@ -30,7 +30,17 @@ KSU_display=$(($KSU_ver + 10000 + 200))
 
 echo ">>> ReSukiSU version: ${KSU_display} (git commits: ${KSU_ver})"
 
-sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"-${kernel_name}-ks${KSU_display}\"/" "${defconfig_file}"
+# Build localversion string — avoid double dash if kernel_name is empty
+if [ -n "$kernel_name" ]; then
+  KSU_localversion="-${kernel_name}-ks${KSU_display}"
+else
+  KSU_localversion="-ks${KSU_display}"
+fi
+if grep -q 'CONFIG_LOCALVERSION=' "${defconfig_file}"; then
+  sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"${KSU_localversion}\"/" "${defconfig_file}"
+else
+  echo "CONFIG_LOCALVERSION=\"${KSU_localversion}\"" >> "${defconfig_file}"
+fi
 echo ">>> defconfig updated: $(grep 'CONFIG_LOCALVERSION=' ${defconfig_file})"
 
 echo -e " \nincludes ReSukiSU, ver ${KSU_display}" >> banner_append
