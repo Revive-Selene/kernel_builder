@@ -1,7 +1,7 @@
 name: Building kernel
 
 on: # [push]
-#  release:\
+#  release:
 #    types: [published]
 #  push:
 #    branches:
@@ -14,39 +14,39 @@ on: # [push]
   workflow_dispatch:
     inputs:
       COMPILER:
-        description: 'compilers used'
+        description: 'Compiler to use'
         required: true
         default: 'shattered-Clang-15'
       KREPO:
-        description: 'kernel repo'
+        description: 'Kernel repo URL'
         required: true
         default: 'https://github.com/Revive-Selene/android_kernel_xiaomi_selene'
       KBRANCH:
-        description: 'kernel branch (use 4.14 for base, 4.14-rssu for ReSukiSU pre-integrated)'
+        description: 'Kernel branch'
         required: true
         default: '4.14'
+      KSU:
+        description: 'Build with ReSukiSU? (yes = compile with KSU, leave blank = no KSU) — must match branch: yes requires 4.14-rssu, blank requires 4.14'
+        required: false
+        default: ''
       NOTES:
-        description: 'notes to print out'
+        description: 'Extra notes (printed in build log)'
         required: false
         default: ''
       VERBOSE:
-        description: 'whether verbose logging should be enabled'
+        description: 'Enable verbose logging (leave blank to disable)'
         required: false
         default: ''
       ZREPO:
-        description: 'zipper repo'
+        description: 'Custom AnyKernel3 repo (leave blank = use default from env)'
         required: false
         default: ''
       ZBRANCH:
-        description: 'zipper branch'
-        required: false
-        default: ''
-      KSU:
-        description: 'KSU mode: leave blank = no KSU, "yes" = init ReSukiSU submodule (use with 4.14-rssu branch), "both" = build twice (non-KSU then KSU)'
+        description: 'Custom AnyKernel3 branch (leave blank = use default from env)'
         required: false
         default: ''
       CONTAINER:
-        description: 'if you know you know'
+        description: 'Build container image'
         required: true
         default: 'fedora:40'
 
@@ -54,9 +54,9 @@ env:
   REPO: ${{ github.event.inputs.KREPO }}
   RUN_NUM: ${{ github.run_number }}_${{ github.run_attempt }}
   KERNEL_BRANCH: ${{ github.event.inputs.KBRANCH }}
+  PATCH_KSU: ${{ github.event.inputs.KSU }}
   NOTE: ${{ github.event.inputs.NOTES }}
   COMPILERS: ${{ github.event.inputs.COMPILER }}
-  PATCH_KSU: ${{ github.event.inputs.KSU }}
   VERBOSE: ${{ github.event.inputs.VERBOSE }}
   zipper_repo: ${{ github.event.inputs.ZREPO }}
   zipper_branch: ${{ github.event.inputs.ZBRANCH }}
@@ -97,6 +97,19 @@ jobs:
               echo "Note: $NOTE"
             fi
 
+        - name: validate KSU + branch combination
+          run: |
+            if [ "$PATCH_KSU" = "yes" ] && ! echo "$KERNEL_BRANCH" | grep -q "rssu"; then
+              echo "❌ ERROR: KSU=yes requires a ReSukiSU-integrated branch (e.g. 4.14-rssu)."
+              echo "   Your branch '$KERNEL_BRANCH' does not contain ReSukiSU hooks."
+              echo "   Either set KSU=blank to build without KSU, or change branch to 4.14-rssu."
+              exit 1
+            fi
+            if [ -z "$PATCH_KSU" ] && echo "$KERNEL_BRANCH" | grep -q "rssu"; then
+              echo "⚠️  WARNING: Branch '$KERNEL_BRANCH' has ReSukiSU integrated but KSU is blank."
+              echo "   The kernel will still compile but ReSukiSU version string will NOT be applied."
+            fi
+
         - name: clone kernel source
           run: |
             echo "Cloning kernel from: $REPO (branch: $KERNEL_BRANCH)"
@@ -110,24 +123,18 @@ jobs:
             echo "Kernel ver:  ${kernel_ver}"
             echo "Head commit: ${kernel_head}"
             echo "Defconfig:   ${defconfig}"
+            echo "KSU mode:    ${PATCH_KSU:-none}"
 
-        - name: run compilation scripts
+        - name: apply ReSukiSU (KSU=yes)
+          if: env.PATCH_KSU == 'yes'
           run: |
             cd kernel
-            case $PATCH_KSU in
-              "both" )
-                bash ../build.sh "$COMPILERS"
-                bash ../ksu/applyPatches.sh
-                bash ../build.sh "$COMPILERS"
-              ;;
-              "" )
-                bash ../build.sh "$COMPILERS"
-              ;;
-              * )
-                bash ../ksu/applyPatches.sh
-                bash ../build.sh "$COMPILERS"
-              ;;
-            esac
+            bash ../ksu/applyPatches.sh
+
+        - name: run compilation
+          run: |
+            cd kernel
+            bash ../build.sh "$COMPILERS"
 
         - name: upload artifacts
           uses: actions/upload-artifact@v4
