@@ -25,16 +25,15 @@ if [ ! -L "${maindir}/drivers/kernelsu" ]; then
   ln -sf ../KernelSU/kernel "${maindir}/drivers/kernelsu"
 fi
 
-KSU_ver=$(cd "${maindir}/KernelSU" && git rev-list --count HEAD)
-KSU_display=$(($KSU_ver + 10000 + 200))
+KSU_hashcommit=$(cd "${maindir}/KernelSU" && git rev-parse --short=7 HEAD)
 
-echo ">>> ReSukiSU version: ${KSU_display} (git commits: ${KSU_ver})"
+echo ">>> ReSukiSU commit: ${KSU_hashcommit}"
 
 # Build localversion string — avoid double dash if kernel_name is empty
 if [ -n "$kernel_name" ]; then
-  KSU_localversion="-${kernel_name}-ks${KSU_display}"
+  KSU_localversion="-${kernel_name}-rssu${KSU_hashcommit}"
 else
-  KSU_localversion="-ks${KSU_display}"
+  KSU_localversion="-rssu${KSU_hashcommit}"
 fi
 if grep -q 'CONFIG_LOCALVERSION=' "${defconfig_file}"; then
   sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"${KSU_localversion}\"/" "${defconfig_file}"
@@ -43,6 +42,6 @@ else
 fi
 echo ">>> defconfig updated: $(grep 'CONFIG_LOCALVERSION=' ${defconfig_file})"
 
-echo -e " \nincludes ReSukiSU, ver ${KSU_display}" >> banner_append
+echo -e " \nincludes ReSukiSU, commit ${KSU_hashcommit}" >> banner_append
 
 echo ">>> ReSukiSU submodule ready."
