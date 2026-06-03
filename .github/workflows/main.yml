@@ -22,7 +22,7 @@ on: # [push]
         required: true
         default: 'https://github.com/Revive-Selene/android_kernel_xiaomi_selene'
       KBRANCH:
-        description: 'kernel branch'
+        description: 'kernel branch (use 4.14 for base, 4.14-rssu for ReSukiSU pre-integrated)'
         required: true
         default: '4.14'
       NOTES:
@@ -42,7 +42,7 @@ on: # [push]
         required: false
         default: ''
       KSU:
-        description: 'if dont want ksu then leave blank'
+        description: 'KSU mode: leave blank = no KSU, "yes" = init ReSukiSU submodule (use with 4.14-rssu branch), "both" = build twice (non-KSU then KSU)'
         required: false
         default: ''
       CONTAINER:
@@ -100,7 +100,7 @@ jobs:
         - name: clone kernel source
           run: |
             echo "Cloning kernel from: $REPO (branch: $KERNEL_BRANCH)"
-            git clone --depth=1 --single-branch $REPO -b $KERNEL_BRANCH kernel
+            git clone --depth=1 --single-branch --recurse-submodules -j4 $REPO -b $KERNEL_BRANCH kernel
 
         - name: print kernel info
           run: |

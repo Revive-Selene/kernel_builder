@@ -1,29 +1,38 @@
 #!/bin/bash
 #
-# hdjsjfjjwufbeizihfjejzf
+# applyPatches.sh — ReSukiSU integration for Revive-Selene
+#
+# This script assumes the kernel source was cloned from a branch
+# that already has ReSukiSU manual hooks integrated (e.g. 4.14-rssu).
+# The KernelSU/ folder is a git submodule pointing to ReSukiSU/ReSukiSU.
+# This script simply initializes the submodule so the driver source is present.
 
 export maindir="$(pwd)"
 export outside="${maindir}/.."
 source "${outside}/$1env"
 
-curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/refs/heads/main/kernel/setup.sh" | bash -
-git add . && git commit -am "drivers: KernelSU"
-KSU_git_ver=$(cd KernelSU && git rev-list --count HEAD)
-KSU_ver=$(($KSU_git_ver + 10000 + 200))
+echo ">>> Initializing ReSukiSU submodule..."
+git submodule update --init --recursive
 
-patchesdir="$outside/ksu/patches/$(echo $kernel_ver | cut -d. -f1,2)"
-if [[ -d "$patchesdir" ]]; then
-  for patch_file in "$patchesdir"/*.patch ; do
-    git am "$patch_file"
-  done
-else
-  echo "patching ksu failed, the kernel version you want to patch doesnt have patches here yet"
+if [ ! -d "${maindir}/KernelSU/kernel" ]; then
+  echo "ERROR: KernelSU/kernel not found after submodule init."
+  echo "Make sure your kernel branch has .gitmodules and the KernelSU submodule."
   exit 1
 fi
 
-sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"-${kernel_name}-ks${KSU_ver}\"/" "${defconfig_file}"
+if [ ! -L "${maindir}/drivers/kernelsu" ]; then
+  echo "WARNING: drivers/kernelsu symlink missing, creating..."
+  ln -sf ../KernelSU/kernel "${maindir}/drivers/kernelsu"
+fi
 
-echo "$(grep 'CONFIG_LOCALVERSION=' ${defconfig_file})"
+KSU_ver=$(cd "${maindir}/KernelSU" && git rev-list --count HEAD)
+KSU_display=$(($KSU_ver + 10000 + 200))
 
-echo -e " \nincludes rsuntk's KernelSU fork, ver ${KSU_ver}" >> banner_append
+echo ">>> ReSukiSU version: ${KSU_display} (git commits: ${KSU_ver})"
 
+sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"-${kernel_name}-ks${KSU_display}\"/" "${defconfig_file}"
+echo ">>> defconfig updated: $(grep 'CONFIG_LOCALVERSION=' ${defconfig_file})"
+
+echo -e " \nincludes ReSukiSU, ver ${KSU_display}" >> banner_append
+
+echo ">>> ReSukiSU submodule ready."
