@@ -42,6 +42,6 @@ else
 fi
 echo ">>> defconfig updated: $(grep 'CONFIG_LOCALVERSION=' ${defconfig_file})"
 
-echo -e " \nincludes ReSukiSU, commit ${KSU_hashcommit}" >> banner_append
+echo -e " \nincludes ReSukiSU (KernelSU), commit ${KSU_hashcommit}" >> banner_append
 
 echo ">>> ReSukiSU submodule ready."
