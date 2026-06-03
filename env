@@ -9,16 +9,16 @@ export outside="${maindir}/.."
 
 export ARCH="arm64"
 export SUBARCH="arm64"
-export KBUILD_BUILD_USER="nijuugo-ji"
-export KBUILD_BUILD_HOST="telegram-de"
+export KBUILD_BUILD_USER="revive-selene"
+export KBUILD_BUILD_HOST="github-actions"
 
 export defconfig="selene_defconfig"
 
 if [[ -z "$zipper_repo" ]]; then
-  export zipper_repo="https://github.com/fukiame/AnyKernel3-niigo"
+  export zipper_repo="https://github.com/Revive-Selene/AnyKernel3"
 fi
 if [[ -z "$zipper_branch" ]]; then
-  export zipper_branch=phi
+  export zipper_branch=selene
 fi
 
 export out_image="${maindir}/out/arch/${ARCH}/boot/Image.gz-dtb"
