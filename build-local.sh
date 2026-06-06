@@ -23,7 +23,6 @@ DEFAULT_COMPILER="shattered-Clang-15"
 DEFAULT_KREPO="https://github.com/Revive-Selene/android_kernel_xiaomi_selene"
 DEFAULT_KBRANCH="4.14"
 DEFAULT_KSU=""
-DEFAULT_CONTAINER=""   # unused locally, just for reference
 DEFAULT_NOTES=""
 DEFAULT_VERBOSE=""
 DEFAULT_ZREPO=""
@@ -41,16 +40,96 @@ ask() {
   fi
 }
 
-# ── Parse args or go interactive ────────────────────────────
+# ── Detect distro ───────────────────────────────────────────
+detect_distro() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    case "$ID" in
+      ubuntu|debian)       echo "ubuntu" ;;
+      fedora|rhel|centos)  echo "fedora" ;;
+      arch|manjaro|endeavouros) echo "arch" ;;
+      *)
+        case "$ID_LIKE" in
+          *debian*|*ubuntu*) echo "ubuntu" ;;
+          *fedora*|*rhel*)   echo "fedora" ;;
+          *arch*)            echo "arch"   ;;
+          *)                 echo "unknown" ;;
+        esac
+        ;;
+    esac
+  else
+    echo "unknown"
+  fi
+}
+
+# ── Install dependencies ─────────────────────────────────────
+install_deps() {
+  local distro
+  distro=$(detect_distro)
+
+  section "Installing dependencies (distro: $distro)"
+
+  case "$distro" in
+    ubuntu)
+      sudo apt-get update -y
+      sudo apt-get install -y \
+        llvm lld clang \
+        gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+        make bc bison flex \
+        libssl-dev libelf-dev \
+        python3 python-is-python3 \
+        curl wget git zip unzip \
+        zstd xz-utils ca-certificates \
+        binutils-dev device-tree-compiler
+      ;;
+    fedora)
+      sudo dnf group install development-tools -y
+      sudo dnf install -y \
+        llvm lld clang \
+        gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+        make bc bison flex \
+        openssl-devel elfutils-libelf-devel \
+        python3 python2 \
+        curl wget git zip unzip \
+        zstd xz ca-certificates \
+        binutils-devel dtc \
+        glibc-devel.i686 glibc-devel \
+        perl tomsfastmath-devel libxml2 libarchive
+      sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+      ;;
+    arch)
+      sudo pacman -Sy --noconfirm \
+        llvm lld clang \
+        aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc \
+        make bc bison flex \
+        openssl libelf \
+        python \
+        curl wget git zip unzip \
+        zstd xz ca-certificates \
+        binutils dtc
+      ;;
+    *)
+      warn "Distro tidak dikenali: $ID"
+      warn "Skip install dependencies otomatis."
+      warn "Pastikan kamu sudah install: clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3 git zip curl wget zstd dtc"
+      return 0
+      ;;
+  esac
+
+  ok "Dependencies installed."
+}
+
+# ── Parse args ───────────────────────────────────────────────
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
   echo "Usage: $0 [--yes]"
-  echo "  --yes   Skip prompts, use all defaults"
+  echo "  --yes   Skip all prompts, use defaults (auto-install deps)"
   exit 0
 fi
 
 USE_DEFAULTS=0
 [ "$1" = "--yes" ] && USE_DEFAULTS=1
 
+# ── Build config prompts ─────────────────────────────────────
 section "Build Configuration"
 
 if [ "$USE_DEFAULTS" = "1" ]; then
@@ -62,19 +141,25 @@ if [ "$USE_DEFAULTS" = "1" ]; then
   VERBOSE="$DEFAULT_VERBOSE"
   ZREPO="$DEFAULT_ZREPO"
   ZBRANCH="$DEFAULT_ZBRANCH"
+  INSTALL_DEPS="y"
   info "Using all defaults."
 else
-  ask "Compiler to use"         "$DEFAULT_COMPILER"  COMPILER
-  ask "Kernel repo URL"         "$DEFAULT_KREPO"     KREPO
-  ask "Kernel branch"           "$DEFAULT_KBRANCH"   KBRANCH
+  ask "Compiler to use"           "$DEFAULT_COMPILER"  COMPILER
+  ask "Kernel repo URL"           "$DEFAULT_KREPO"     KREPO
+  ask "Kernel branch"             "$DEFAULT_KBRANCH"   KBRANCH
   ask "Build with ReSukiSU? (yes = with KSU, blank = no KSU)" "$DEFAULT_KSU" KSU
-  ask "Extra notes"             "$DEFAULT_NOTES"     NOTES
+  ask "Extra notes"               "$DEFAULT_NOTES"     NOTES
   ask "Verbose logging? (1 = yes, blank = no)" "$DEFAULT_VERBOSE" VERBOSE
-  ask "Custom AnyKernel3 repo"  "$DEFAULT_ZREPO"     ZREPO
-  ask "Custom AnyKernel3 branch" "$DEFAULT_ZBRANCH"  ZBRANCH
+  ask "Custom AnyKernel3 repo"    "$DEFAULT_ZREPO"     ZREPO
+  ask "Custom AnyKernel3 branch"  "$DEFAULT_ZBRANCH"   ZBRANCH
+
+  # Tanya install deps paling terakhir
+  DETECTED_DISTRO=$(detect_distro)
+  echo ""
+  read -rp "$(echo -e "${BOLD}Install build dependencies? (detected: ${CYAN}${DETECTED_DISTRO}${RESET}${BOLD}) [y/N]: ${RESET}")" INSTALL_DEPS
 fi
 
-# Override env zipper vars if custom provided
+# ── Override env zipper vars ─────────────────────────────────
 [ -n "$ZREPO" ]   && export zipper_repo="$ZREPO"
 [ -n "$ZBRANCH" ] && export zipper_branch="$ZBRANCH"
 
@@ -88,9 +173,17 @@ echo -e "  AK3 repo      : ${CYAN}${ZREPO:-from env}${RESET}"
 echo -e "  AK3 branch    : ${CYAN}${ZBRANCH:-from env}${RESET}"
 echo -e "  Notes         : ${CYAN}${NOTES:-none}${RESET}"
 echo -e "  Verbose       : ${CYAN}${VERBOSE:-off}${RESET}"
+echo -e "  Install deps  : ${CYAN}${INSTALL_DEPS:-n}${RESET}"
 echo ""
 read -rp "$(echo -e "${BOLD}Proceed? [Y/n]: ${RESET}")" confirm
 [[ "$confirm" =~ ^[Nn]$ ]] && { info "Aborted."; exit 0; }
+
+# ── Install deps if requested ────────────────────────────────
+if [[ "$INSTALL_DEPS" =~ ^[Yy]$ ]]; then
+  install_deps
+else
+  info "Skipping dependency installation."
+fi
 
 # ── Validate KSU + branch combination ───────────────────────
 section "Validating configuration"
@@ -116,7 +209,7 @@ section "Kernel source"
 KERNEL_DIR="${SCRIPT_DIR}/kernel"
 
 if [ -d "$KERNEL_DIR/.git" ]; then
-  info "Kernel directory already exists, checking branch..."
+  info "Kernel directory already exists, checking..."
   cd "$KERNEL_DIR"
   CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -128,12 +221,12 @@ if [ -d "$KERNEL_DIR/.git" ]; then
     rm -rf "$KERNEL_DIR"
     git clone --depth=1 --single-branch --recurse-submodules -j4 "$KREPO" -b "$KBRANCH" kernel
   elif [ "$CURRENT_BRANCH" != "$KBRANCH" ]; then
-    info "Switching branch from '$CURRENT_BRANCH' to '$KBRANCH'..."
+    info "Switching branch: '$CURRENT_BRANCH' → '$KBRANCH'"
     git fetch origin "$KBRANCH" --depth=1
     git checkout "$KBRANCH"
     git reset --hard "origin/$KBRANCH"
   else
-    info "Already on branch '$KBRANCH', rebasing to latest..."
+    info "Already on '$KBRANCH', rebasing to latest..."
     git fetch origin "$KBRANCH" --depth=1
     git reset --hard "origin/$KBRANCH"
   fi
