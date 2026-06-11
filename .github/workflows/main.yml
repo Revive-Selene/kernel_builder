@@ -26,7 +26,7 @@ on: # [push]
         required: true
         default: '4.14'
       KSU:
-        description: 'Build with ReSukiSU? (yes = compile with KSU, leave blank = no KSU) — must match branch: yes requires 4.14-rssu, blank requires 4.14'
+        description: 'KSU patch script to run (e.g. applyPatches.sh, applyPatches-ksun.sh, or leave blank for no KSU)'
         required: false
         default: ''
       NOTES:
@@ -99,15 +99,14 @@ jobs:
 
         - name: validate KSU + branch combination
           run: |
-            if [ "$PATCH_KSU" = "yes" ] && ! echo "$KERNEL_BRANCH" | grep -q "rssu"; then
-              echo "❌ ERROR: KSU=yes requires a ReSukiSU-integrated branch (e.g. 4.14-rssu)."
-              echo "   Your branch '$KERNEL_BRANCH' does not contain ReSukiSU hooks."
-              echo "   Either set KSU=blank to build without KSU, or change branch to 4.14-rssu."
-              exit 1
-            fi
-            if [ -z "$PATCH_KSU" ] && echo "$KERNEL_BRANCH" | grep -q "rssu"; then
-              echo "⚠️  WARNING: Branch '$KERNEL_BRANCH' has ReSukiSU integrated but KSU is blank."
-              echo "   The kernel will still compile but ReSukiSU version string will NOT be applied."
+            if [ -n "$PATCH_KSU" ]; then
+              if [ "$PATCH_KSU" = "applyPatches-ksun.sh" ] && ! echo "$KERNEL_BRANCH" | grep -q "ksun"; then
+                echo "❌ ERROR: applyPatches-ksun.sh requires a KernelSU-Next branch (e.g. 4.14-ksun)."
+                exit 1
+              elif [ "$PATCH_KSU" = "applyPatches.sh" ] && ! echo "$KERNEL_BRANCH" | grep -q "rssu"; then
+                echo "❌ ERROR: applyPatches.sh requires a ReSukiSU branch (e.g. 4.14-rssu)."
+                exit 1
+              fi
             fi
 
         - name: clone kernel source
@@ -125,11 +124,11 @@ jobs:
             echo "Defconfig:   ${defconfig}"
             echo "KSU mode:    ${PATCH_KSU:-none}"
 
-        - name: apply ReSukiSU (KSU=yes)
-          if: env.PATCH_KSU == 'yes'
+        - name: apply KSU patch
+          if: env.PATCH_KSU != ''
           run: |
             cd kernel
-            bash ../ksu/applyPatches.sh
+            bash ../ksu/$PATCH_KSU
 
         - name: run compilation
           run: |
