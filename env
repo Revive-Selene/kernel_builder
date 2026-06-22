@@ -36,7 +36,12 @@ export kernel_head="$(git log --pretty=format:'%h' -1)"
 # that occur when 'make kernelversion' is called before compilation
 export kernel_ver="$(grep -m1 '^VERSION' Makefile | cut -d= -f2 | tr -d ' ').$(grep -m1 '^PATCHLEVEL' Makefile | cut -d= -f2 | tr -d ' ').$(grep -m1 '^SUBLEVEL' Makefile | cut -d= -f2 | tr -d ' ')"
 # kernel_name: read from CONFIG_LOCALVERSION in defconfig (empty if not set)
-export kernel_name=$(grep 'CONFIG_LOCALVERSION=' "${defconfig_file}" 2>/dev/null | sed 's/CONFIG_LOCALVERSION=//g' | sed 's/"//g' | sed 's/^[-#]*//')
+export kernel_name_raw=$(grep 'CONFIG_LOCALVERSION=' "${defconfig_file}" 2>/dev/null | sed 's/CONFIG_LOCALVERSION=//g' | sed 's/"//g')
+if [[ "$kernel_name_raw" == *"#"* ]]; then
+  export kernel_name="(HASTAG)$(echo "$kernel_name_raw" | sed 's/^[-#]*//')"
+else
+  export kernel_name="$(echo "$kernel_name_raw" | sed 's/^[-#]*//')"
+fi
 export TIME=$(date +"%y%m%d-%H%M")
 
 export zip_name="${maindir}/${kernel_name}${SUFFIX}-${TIME}-${kernel_head}.zip"

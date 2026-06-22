@@ -29,11 +29,17 @@ KSU_hashcommit=$(cd "${maindir}/KernelSU-Next" && git rev-parse --short=7 HEAD)
 
 echo ">>> KernelSU-Next commit: ${KSU_hashcommit}"
 
-# Build localversion string — avoid double dash if kernel_name is empty
-if [ -n "$kernel_name" ]; then
-  KSU_localversion="-${kernel_name}-ksun${KSU_hashcommit}"
+# Build localversion string — preserve '#' if it was originally in defconfig
+orig_localversion=$(grep 'CONFIG_LOCALVERSION=' "${defconfig_file}" 2>/dev/null | sed 's/CONFIG_LOCALVERSION=//g' | sed 's/"//g')
+if [[ "$orig_localversion" == *"#"* ]]; then
+  clean_name="${kernel_name#(HASTAG)}"
+  KSU_localversion="-#${clean_name}-ksun${KSU_hashcommit}"
 else
-  KSU_localversion="-ksun${KSU_hashcommit}"
+  if [ -n "$kernel_name" ]; then
+    KSU_localversion="-${kernel_name}-ksun${KSU_hashcommit}"
+  else
+    KSU_localversion="-ksun${KSU_hashcommit}"
+  fi
 fi
 if grep -q 'CONFIG_LOCALVERSION=' "${defconfig_file}"; then
   sed -i "s/\(CONFIG_LOCALVERSION=\)\(.*\)/\1\"${KSU_localversion}\"/" "${defconfig_file}"

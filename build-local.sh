@@ -12,6 +12,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
+# ── Color support detection ──────────────────────────────────
+if [ -t 1 ] && tput colors &>/dev/null 2>&1 && [ "$(tput colors)" -ge 8 ]; then
+  COLOR_SUPPORT=1
+else
+  COLOR_SUPPORT=0
+fi
+
 info()    { echo -e "${CYAN}[INFO]${RESET} $*"; }
 ok()      { echo -e "${GREEN}[OK]${RESET} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
@@ -24,7 +31,6 @@ DEFAULT_KREPO="https://github.com/Revive-Selene/android_kernel_xiaomi_selene"
 DEFAULT_KBRANCH="4.14"
 DEFAULT_KSU=""
 DEFAULT_NOTES=""
-DEFAULT_VERBOSE=""
 DEFAULT_ZREPO=""
 DEFAULT_ZBRANCH=""
 
@@ -45,9 +51,9 @@ detect_distro() {
   if [ -f /etc/os-release ]; then
     . /etc/os-release
     case "$ID" in
-      ubuntu|debian)       echo "ubuntu" ;;
-      fedora|rhel|centos)  echo "fedora" ;;
-      arch|manjaro|endeavouros) echo "arch" ;;
+      ubuntu|debian)            echo "ubuntu" ;;
+      fedora|rhel|centos)       echo "fedora" ;;
+      arch|manjaro|endeavouros) echo "arch"   ;;
       *)
         case "$ID_LIKE" in
           *debian*|*ubuntu*) echo "ubuntu" ;;
@@ -66,9 +72,7 @@ detect_distro() {
 install_deps() {
   local distro
   distro=$(detect_distro)
-
   section "Installing dependencies (distro: $distro)"
-
   case "$distro" in
     ubuntu)
       sudo apt-get update -y
@@ -109,14 +113,33 @@ install_deps() {
         binutils dtc
       ;;
     *)
-      warn "Distro tidak dikenali: $ID"
-      warn "Skip install dependencies otomatis."
-      warn "Pastikan kamu sudah install: clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3 git zip curl wget zstd dtc"
+      warn "Unrecognized distro: ${ID:-unknown}"
+      warn "Skipping automatic dependency installation."
+      warn "Please install manually: clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3 git zip curl wget zstd dtc"
       return 0
       ;;
   esac
-
   ok "Dependencies installed."
+}
+
+# ── Build inline KSU list string ────────────────────────────
+build_ksu_list() {
+  local ksu_dir="${SCRIPT_DIR}/ksu"
+  local list="" name=""
+  if [ -d "$ksu_dir" ]; then
+    for f in "$ksu_dir"/*.sh; do
+      [ -f "$f" ] || continue
+      name=$(basename "$f")
+      if [ "$COLOR_SUPPORT" = "1" ]; then
+        list+="${CYAN}${name}${RESET}, "
+      else
+        list+="${name}, "
+      fi
+    done
+    list="${list%, }"
+  fi
+  [ -z "$list" ] && list="none found"
+  echo -e "$list"
 }
 
 # ── Parse args ───────────────────────────────────────────────
@@ -138,25 +161,33 @@ if [ "$USE_DEFAULTS" = "1" ]; then
   KBRANCH="$DEFAULT_KBRANCH"
   KSU="$DEFAULT_KSU"
   NOTES="$DEFAULT_NOTES"
-  VERBOSE="$DEFAULT_VERBOSE"
+  VERBOSE=""
   ZREPO="$DEFAULT_ZREPO"
   ZBRANCH="$DEFAULT_ZBRANCH"
   INSTALL_DEPS="y"
   info "Using all defaults."
 else
-  ask "Compiler to use"           "$DEFAULT_COMPILER"  COMPILER
-  ask "Kernel repo URL"           "$DEFAULT_KREPO"     KREPO
-  ask "Kernel branch"             "$DEFAULT_KBRANCH"   KBRANCH
-  ask "Build with ReSukiSU? (yes = with KSU, blank = no KSU)" "$DEFAULT_KSU" KSU
-  ask "Extra notes"               "$DEFAULT_NOTES"     NOTES
-  ask "Verbose logging? (1 = yes, blank = no)" "$DEFAULT_VERBOSE" VERBOSE
-  ask "Custom AnyKernel3 repo"    "$DEFAULT_ZREPO"     ZREPO
-  ask "Custom AnyKernel3 branch"  "$DEFAULT_ZBRANCH"   ZBRANCH
+  ask "Compiler to use"   "$DEFAULT_COMPILER" COMPILER
+  ask "Kernel repo URL"   "$DEFAULT_KREPO"    KREPO
+  ask "Kernel branch"     "$DEFAULT_KBRANCH"  KBRANCH
 
-  # Tanya install deps paling terakhir
+  # KSU prompt — scripts listed inline inside [...]
+  KSU_LIST=$(build_ksu_list)
+  read -rp "$(echo -e "${BOLD}KSU patch script${RESET} [${KSU_LIST}] (blank = no KSU): ")" KSU
+
+  ask "Extra notes"       "$DEFAULT_NOTES"    NOTES
+
+  # Verbose — apt-style [y/N]
+  read -rp "$(echo -e "${BOLD}Verbose logging?${RESET} [y/N]: ")" _verb
+  [[ "$_verb" =~ ^[Yy]$ ]] && VERBOSE=1 || VERBOSE=""
+
+  ask "Custom AnyKernel3 repo"   "$DEFAULT_ZREPO"   ZREPO
+  ask "Custom AnyKernel3 branch" "$DEFAULT_ZBRANCH" ZBRANCH
+
+  # Install deps — apt-style [y/N]
   DETECTED_DISTRO=$(detect_distro)
   echo ""
-  read -rp "$(echo -e "${BOLD}Install build dependencies? (detected: ${CYAN}${DETECTED_DISTRO}${RESET}${BOLD}) [y/N]: ${RESET}")" INSTALL_DEPS
+  read -rp "$(echo -e "${BOLD}Install build dependencies? (detected: ${CYAN}${DETECTED_DISTRO}${RESET}${BOLD})${RESET} [y/N]: ")" INSTALL_DEPS
 fi
 
 # ── Override env zipper vars ─────────────────────────────────
@@ -168,7 +199,7 @@ section "Summary"
 echo -e "  Compiler      : ${CYAN}${COMPILER}${RESET}"
 echo -e "  Kernel repo   : ${CYAN}${KREPO}${RESET}"
 echo -e "  Branch        : ${CYAN}${KBRANCH}${RESET}"
-echo -e "  ReSukiSU      : ${CYAN}${KSU:-none}${RESET}"
+echo -e "  KSU script    : ${CYAN}${KSU:-none}${RESET}"
 echo -e "  AK3 repo      : ${CYAN}${ZREPO:-from env}${RESET}"
 echo -e "  AK3 branch    : ${CYAN}${ZBRANCH:-from env}${RESET}"
 echo -e "  Notes         : ${CYAN}${NOTES:-none}${RESET}"
@@ -185,16 +216,16 @@ else
   info "Skipping dependency installation."
 fi
 
-# ── Validate KSU + branch combination ───────────────────────
+# ── Validate KSU patch script ────────────────────────────────
 section "Validating configuration"
 
-if [ "$KSU" = "yes" ] && ! echo "$KBRANCH" | grep -q "rssu"; then
-  error "KSU=yes requires a ReSukiSU branch (e.g. 4.14-rssu).\n  Your branch '$KBRANCH' does not contain ReSukiSU hooks.\n  Either set KSU blank or change branch to 4.14-rssu."
-fi
-
-if [ -z "$KSU" ] && echo "$KBRANCH" | grep -q "rssu"; then
-  warn "Branch '$KBRANCH' has ReSukiSU integrated but KSU is blank."
-  warn "Kernel will compile but ReSukiSU version string will NOT be applied."
+if [ -n "$KSU" ]; then
+  if [ ! -f "${SCRIPT_DIR}/ksu/${KSU}" ]; then
+    error "KSU patch script '${KSU}' not found in ksu/ directory.\n  Available: $(ls ${SCRIPT_DIR}/ksu/*.sh 2>/dev/null | xargs -I{} basename {} | tr '\n' ' ')"
+  fi
+  ok "KSU patch script found: ksu/${KSU}"
+else
+  info "No KSU patch script specified, building without KSU."
 fi
 
 ok "Validation passed."
@@ -241,19 +272,21 @@ source "${SCRIPT_DIR}/env"
 
 # ── Print kernel info ────────────────────────────────────────
 section "Kernel info"
+KERNEL_COMMIT=$(git rev-parse --short=7 HEAD)
 echo -e "  Name    : ${CYAN}${kernel_name:-N/A}${RESET}"
 echo -e "  Version : ${CYAN}${kernel_ver:-N/A}${RESET}"
-echo -e "  Head    : ${CYAN}$(git rev-parse --short HEAD)${RESET}"
+echo -e "  Branch  : ${CYAN}${KBRANCH}${RESET}"
+echo -e "  Commit  : ${CYAN}${KERNEL_COMMIT}${RESET}"
 echo -e "  Config  : ${CYAN}${defconfig:-N/A}${RESET}"
 echo -e "  KSU     : ${CYAN}${KSU:-none}${RESET}"
 
 # ── Notes ────────────────────────────────────────────────────
 [ -n "$NOTES" ] && { section "Notes"; echo -e "  ${YELLOW}${NOTES}${RESET}"; }
 
-# ── Apply ReSukiSU patches ───────────────────────────────────
-if [ "$KSU" = "yes" ]; then
-  section "Applying ReSukiSU patches"
-  bash "${SCRIPT_DIR}/ksu/applyPatches.sh"
+# ── Apply KSU patches ────────────────────────────────────────
+if [ -n "$KSU" ]; then
+  section "Applying KSU patches: ksu/${KSU}"
+  bash "${SCRIPT_DIR}/ksu/${KSU}"
   ok "Patches applied."
 fi
 
@@ -278,6 +311,7 @@ source "${SCRIPT_DIR}/env"
 
 if ls "${SCRIPT_DIR}/kernel/"*.zip &>/dev/null 2>&1; then
   ok "Build succeeded in $((DIFF / 60))m $((DIFF % 60))s"
+  echo -e "  Branch : ${CYAN}${KBRANCH}${RESET} | Commit : ${CYAN}${KERNEL_COMMIT}${RESET}"
   echo ""
   echo -e "${BOLD}Output files:${RESET}"
   ls -lh "${SCRIPT_DIR}/kernel/"*.zip
