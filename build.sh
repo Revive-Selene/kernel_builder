@@ -39,6 +39,8 @@ for toolchain in $1; do
 
   bash -x "${outside}/toolchains/${toolchain}.sh" setup
 
+  rm -f "${out_image}" "${out_dtb}" "${out_dtbo}"
+
   BUILD_START=$(date +"%s")
   export CUR_TOOLCHAIN="${toolchain}"
 
@@ -56,5 +58,6 @@ for toolchain in $1; do
     DIFF=$((BUILD_END - BUILD_START))
     echo "build failed in $((DIFF / 60))m, $((DIFF % 60))s" > "${toolchain}.log.info"
     echo "compiler: $(cat ${toolchain}.info)" >> "${toolchain}.log.info"
+    exit 1
   fi
 done
