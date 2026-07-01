@@ -1,5 +1,5 @@
 name: Building kernel
-run-name: "Building kernel (${{ inputs.KBRANCH }}) #${{ github.run_number }}"
+run-name: "Building kernel (${{ inputs.KBRANCH }}) #${{ github.run_number }}${{ inputs.NOTES && format(' - {0}', inputs.NOTES) || '' }}"
 
 on: # [push]
 #  release:
